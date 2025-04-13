@@ -19,15 +19,14 @@ defmodule ArbitrazeWeb.ConnCase do
 
   using do
     quote do
+      use ArbitrazeWeb, :verified_routes
+      import ArbitrazeWeb.ConnCase
+      import Phoenix.ConnTest
+      import Plug.Conn
       # The default endpoint for testing
       @endpoint ArbitrazeWeb.Endpoint
 
-      use ArbitrazeWeb, :verified_routes
-
       # Import conveniences for testing with connections
-      import Plug.Conn
-      import Phoenix.ConnTest
-      import ArbitrazeWeb.ConnCase
     end
   end
 
