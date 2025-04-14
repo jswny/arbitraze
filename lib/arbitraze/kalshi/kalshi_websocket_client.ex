@@ -2,6 +2,8 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
   @moduledoc false
   use GenServer
 
+  alias Phoenix.PubSub
+
   require Logger
 
   def start_link(args) do
@@ -68,6 +70,8 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
 
         case await_ws_upgrade(conn_pid, stream_ref) do
           {:ok, :upgraded} ->
+            Process.send_after(self(), :subscribe_after_init, 0)
+
             {:ok,
              %{
                conn_pid: conn_pid,
@@ -75,7 +79,6 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
                api_key: api_key,
                private_key: private_key,
                path: path,
-               tickers: [],
                command_id: 1
              }}
 
@@ -90,6 +93,10 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
         Logger.error("Connection failed: #{inspect(reason)}")
         {:stop, {:connection_failed, reason}}
     end
+  end
+
+  def pubsub_subscribe(channel) do
+    PubSub.subscribe(Arbitraze.PubSub, channel)
   end
 
   defp parse_private_key(pem) do
@@ -172,10 +179,6 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
     GenServer.call(__MODULE__, :get_connection)
   end
 
-  def subscribe_to_ticker(ticker) do
-    GenServer.cast(__MODULE__, {:subscribe_ticker, ticker})
-  end
-
   def handle_call({:send, message}, _from, %{conn_pid: conn_pid, stream_ref: stream_ref, command_id: id} = state) do
     message =
       case message do
@@ -195,29 +198,29 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
     {:reply, state, state}
   end
 
-  def handle_cast({:subscribe_ticker, ticker}, %{conn_pid: conn_pid, stream_ref: stream_ref, command_id: id} = state) do
+  def handle_cast(:subscribe_channel_ticker, %{conn_pid: conn_pid, stream_ref: stream_ref, command_id: id} = state) do
     subscribe_message =
       Jason.encode!(%{
         "id" => id,
         "cmd" => "subscribe",
         "params" => %{
-          "channels" => ["ticker"],
-          "market_tickers" => [ticker]
+          "channels" => ["ticker"]
         }
       })
 
-    Logger.info("Subscribing to ticker: #{ticker}")
+    Logger.info("Subscribing to ticker channel")
     :gun.ws_send(conn_pid, stream_ref, {:text, subscribe_message})
     {:noreply, %{state | command_id: id + 1}}
   end
 
   def handle_info({:gun_ws, conn_pid, _stream_ref, {:text, data}}, %{conn_pid: conn_pid} = state) do
-    Logger.info("Received message: #{data}")
+    %{"type" => event_type} = decoded_data = :json.decode(data)
+
+    PubSub.broadcast(Arbitraze.PubSub, get_pubsub_topic(event_type), {:kalshi_event, decoded_data})
     {:noreply, state}
   end
 
-  def handle_info({:gun_ws, conn_pid, _stream_ref, {:binary, data}}, %{conn_pid: conn_pid} = state) do
-    Logger.info("Received binary data: #{inspect(data)}")
+  def handle_info({:gun_ws, conn_pid, _stream_ref, {:binary, _data}}, %{conn_pid: conn_pid} = state) do
     {:noreply, state}
   end
 
@@ -231,13 +234,14 @@ defmodule Arbitraze.Kalshi.KalshiWebSocketClient do
     {:noreply, state}
   end
 
-  def handle_info(:send_ping, %{conn_pid: conn_pid, stream_ref: stream_ref} = state) do
-    Logger.debug("Sending ping to server")
-    :gun.ws_send(conn_pid, stream_ref, :ping)
+  def handle_info(:subscribe_after_init, state) do
+    GenServer.cast(self(), :subscribe_channel_ticker)
     {:noreply, state}
   end
 
   def terminate(_reason, %{conn_pid: conn_pid}) do
     :gun.close(conn_pid)
   end
+
+  defp get_pubsub_topic(event_type), do: "kalshi_#{event_type}"
 end

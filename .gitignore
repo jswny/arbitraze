@@ -37,3 +37,6 @@ npm-debug.log
 
 # Environment variables
 *.env*
+
+# Tooling
+.elixir_ls
