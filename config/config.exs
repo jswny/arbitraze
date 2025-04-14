@@ -7,6 +7,11 @@
 # General application configuration
 import Config
 
+config :arbitraze, Arbitraze.Kalshi,
+  host: ~c"api.elections.kalshi.com",
+  port: 443,
+  path: "/trade-api/ws/v2"
+
 # Configures the mailer
 #
 # By default it uses the "Local" adapter which stores the emails

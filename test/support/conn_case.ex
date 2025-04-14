@@ -20,6 +20,7 @@ defmodule ArbitrazeWeb.ConnCase do
   using do
     quote do
       use ArbitrazeWeb, :verified_routes
+
       import ArbitrazeWeb.ConnCase
       import Phoenix.ConnTest
       import Plug.Conn
