@@ -1,64 +1,116 @@
 import { DurableObject } from "cloudflare:workers";
+import { KalshiClient } from "./kalshiClient";
+import type { KalshiBindings } from "./kalshiClient";
+import { KalshiSnapshotQueueBindings, runKalshiIngest } from "./kalshiIngest";
+import type { KalshiSnapshotMessage } from "./kalshiIngest";
+import { processKalshiSnapshotBatch } from "./kalshiSnapshotConsumer";
 
-/**
- * Welcome to Cloudflare Workers! This is your first Durable Objects application.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your Durable Object in action
- * - Run `npm run deploy` to publish your application
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/durable-objects
- */
+type WorkerEnv = Env & KalshiBindings & KalshiSnapshotQueueBindings;
 
-/** A Durable Object's behavior is defined in an exported Javascript class */
-export class MyDurableObject extends DurableObject<Env> {
-	/**
-	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
-	 * 	`DurableObjectStub::get` for a given identifier (no-op constructors can be omitted)
-	 *
-	 * @param ctx - The interface for interacting with Durable Object state
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 */
-	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env);
-	}
-
-	/**
-	 * The Durable Object exposes an RPC method sayHello which will be invoked when when a Durable
-	 *  Object instance receives a request from a Worker via the same method invocation on the stub
-	 *
-	 * @param name - The name provided to a Durable Object instance from a Worker
-	 * @returns The greeting to be sent back to the Worker
-	 */
-	async sayHello(name: string): Promise<string> {
-		return `Hello, ${name}!`;
-	}
+declare global {
+	interface Env extends KalshiBindings, KalshiSnapshotQueueBindings {}
 }
 
-export default {
-	/**
-	 * This is the standard fetch handler for a Cloudflare Worker
-	 *
-	 * @param request - The request submitted to the Worker from the client
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 * @param ctx - The execution context of the Worker
-	 * @returns The response to be sent back to the client
-	 */
-	async fetch(request, env, ctx): Promise<Response> {
-		// Create a stub to open a communication channel with the Durable Object
-		// instance named "foo".
-		//
-		// Requests from all Workers to the Durable Object instance named "foo"
-		// will go to a single remote Durable Object instance.
-		const stub = env.MY_DURABLE_OBJECT.getByName("foo");
+export class KalshiWebsocketDurableObject extends DurableObject<WorkerEnv> {
+	private readonly kalshi: KalshiClient;
 
-		// Call the `sayHello()` RPC method on the stub to invoke the method on
-		// the remote Durable Object instance.
-		const greeting = await stub.sayHello("world");
+	constructor(state: DurableObjectState, env: WorkerEnv) {
+		super(state, env);
+		this.kalshi = new KalshiClient(env);
+		state.blockConcurrencyWhile(async () => {
+			await this.kalshi.start();
+		});
+	}
 
-		return new Response(greeting);
-	},
-} satisfies ExportedHandler<Env>;
+	async fetch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+
+		if (url.pathname === "/connect") {
+			await this.kalshi.ensureConnected();
+			return new Response("Kalshi WebSocket connection attempt started\n", { status: 202 });
+		}
+
+		if (request.method === "POST" && url.pathname === "/subscribe") {
+			return this.handleSubscribe(request);
+		}
+
+		if (request.method === "GET" && url.pathname === "/subscriptions") {
+			const summary = this.kalshi.listSubscriptions();
+			return json(summary);
+		}
+
+		if (url.pathname === "/status" || url.pathname === "/") {
+			const status = await this.kalshi.getStatus();
+			return json(status);
+		}
+
+		return new Response("Not found", { status: 404 });
+	}
+
+	private async handleSubscribe(request: Request): Promise<Response> {
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch (error) {
+			return json({ ok: false, error: `Invalid JSON body: ${error}` }, 400);
+		}
+
+		if (!isRecord(body)) {
+			return json({ ok: false, error: "Request body must be an object" }, 400);
+		}
+
+		const channelsValue = body.channels;
+		const channels = Array.isArray(channelsValue)
+			? channelsValue.filter((item): item is string => typeof item === "string")
+			: [];
+		const channel = (channels[0] ?? "ticker").toLowerCase();
+		const normalizedChannel = channel === "order_book" ? "orderbook" : channel;
+		if (normalizedChannel !== "ticker" && normalizedChannel !== "orderbook") {
+			return json({ ok: false, error: `Unsupported channel: ${channel}` }, 400);
+		}
+		const filters = { ...body };
+
+		try {
+			const { ack } = await this.kalshi.subscribe(normalizedChannel, filters);
+			const status = await this.kalshi.getStatus();
+			return json({ ok: true, ack, status });
+		} catch (error) {
+			const status = await this.kalshi.getStatus();
+			return json({
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+				status,
+			}, 502);
+		}
+	}
+
+}
+
+	export default {
+		async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+			const id = env.KALSHI_WEBSOCKET_DO.idFromName("kalshi-websocket");
+			const stub = env.KALSHI_WEBSOCKET_DO.get(id);
+			return stub.fetch(request);
+		},
+		async scheduled(controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+			ctx.waitUntil(runKalshiIngest(env, controller));
+		},
+		async queue(
+			batch: MessageBatch<KalshiSnapshotMessage>,
+			env: WorkerEnv,
+			ctx: ExecutionContext,
+		): Promise<void> {
+			await processKalshiSnapshotBatch(batch, env, ctx);
+		},
+} satisfies ExportedHandler<WorkerEnv, KalshiSnapshotMessage>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function json(value: unknown, status = 200): Response {
+	return new Response(JSON.stringify(value, null, 2), {
+		status,
+		headers: { "content-type": "application/json" },
+	});
+}

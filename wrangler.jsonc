@@ -10,7 +10,7 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyDurableObject"
+				"KalshiWebsocketDurableObject"
 			],
 			"tag": "v1"
 		}
@@ -18,9 +18,40 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
-				"name": "MY_DURABLE_OBJECT"
+				"class_name": "KalshiWebsocketDurableObject",
+				"name": "KALSHI_WEBSOCKET_DO"
 			}
+		]
+	},
+	"queues": {
+		"producers": [
+			{
+				"binding": "KALSHI_SNAPSHOTS_QUEUE",
+				"queue": "kalshi-snapshots"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "kalshi-snapshots",
+				"max_batch_size": 40,
+				"max_batch_timeout": 5
+			}
+		]
+	},
+	"vectorize": [
+		{
+			"binding": "MATCH_VECTORIZE",
+			"index_name": "arbitraze-matching-markets-dev",
+			"remote": true
+		}
+	],
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"triggers": {
+		"crons": [
+			"*/5 * * * *"
 		]
 	},
 	"observability": {

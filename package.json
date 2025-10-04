@@ -4,9 +4,10 @@
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
-		"cf-typegen": "wrangler types"
+		"dev": "mkdir -p .wrangler/logs && WRANGLER_LOG_PATH=\"$(pwd)/.wrangler/logs\" wrangler dev --test-scheduled",
+		"start": "pnpm dev",
+		"cf-typegen": "wrangler types",
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"typescript": "^5.5.2",
