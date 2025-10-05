@@ -10,8 +10,6 @@ interface ProcessMarketSnapshotOptions<T> {
 	onSkip?: (message: Message<T>) => void;
 }
 
-const EMBEDDING_MODEL = "@cf/baai/bge-base-en-v1.5";
-
 type EmbeddingResponse = {
 	data?: Array<number[] | { embedding?: number[] }>;
 	shape?: number[];
@@ -86,7 +84,8 @@ async function persistMarketMetadata(
 		return;
 	}
 
-	const response = await ai.run(EMBEDDING_MODEL, {
+	const resolvedModel = resolveEmbeddingModel(env);
+	const response = await ai.run(resolvedModel, {
 		text: documents.map((item) => item.text),
 	});
 
@@ -111,7 +110,15 @@ async function persistMarketMetadata(
 	}
 
 	await vectorize.upsert(vectors);
-	console.log(`[${logPrefix}] upserted ${vectors.length} vector(s) into Vectorize`);
+	console.log(
+		`[${logPrefix}] upserted ${vectors.length} vector(s) using model ${resolvedModel} into Vectorize`,
+	);
+}
+
+type AiModelName = Parameters<Ai["run"]>[0];
+
+function resolveEmbeddingModel(env: Env): AiModelName {
+	return env.MARKET_EMBEDDING_MODEL as AiModelName;
 }
 
 function extractEmbeddingVector(response: unknown, index: number): Float32Array | undefined {

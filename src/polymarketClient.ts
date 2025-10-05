@@ -1,3 +1,11 @@
+import {
+	pickBoolean,
+	pickIsoTimestamp,
+	pickNumber,
+	pickString,
+	toRecord,
+} from "./utils/records";
+
 const DEFAULT_API_BASE = "https://gamma-api.polymarket.com";
 const MARKETS_PATH = "/markets";
 const DEFAULT_LIMIT = 200;
@@ -197,13 +205,6 @@ function normalizePolymarketMarket(record: Record<string, unknown>): PolymarketM
 	};
 }
 
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-	if (typeof value === "object" && value !== null) {
-		return value as Record<string, unknown>;
-	}
-	return undefined;
-}
-
 function pickFirstRecord(value: unknown): Record<string, unknown> | undefined {
 	if (Array.isArray(value)) {
 		for (const item of value) {
@@ -214,56 +215,6 @@ function pickFirstRecord(value: unknown): Record<string, unknown> | undefined {
 		}
 	}
 	return undefined;
-}
-
-function pickString(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed.length ? trimmed : undefined;
-	}
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return String(value);
-	}
-	return undefined;
-}
-
-function pickNumber(value: unknown): number | undefined {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-	if (typeof value === "string") {
-		const parsed = Number(value);
-		return Number.isFinite(parsed) ? parsed : undefined;
-	}
-	return undefined;
-}
-
-function pickBoolean(value: unknown): boolean | undefined {
-	if (typeof value === "boolean") {
-		return value;
-	}
-	if (typeof value === "string") {
-		const normalized = value.toLowerCase();
-		if (normalized === "true") {
-			return true;
-		}
-		if (normalized === "false") {
-			return false;
-		}
-	}
-	return undefined;
-}
-
-function pickIsoTimestamp(value: unknown): string | undefined {
-	const raw = pickString(value);
-	if (!raw) {
-		return undefined;
-	}
-	const date = new Date(raw);
-	if (Number.isNaN(date.valueOf())) {
-		return undefined;
-	}
-	return date.toISOString();
 }
 
 function parseStringArray(value: unknown): string[] | undefined {

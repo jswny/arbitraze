@@ -1,6 +1,12 @@
 import type { PolymarketSnapshotMessage } from "./polymarketIngest";
 import { processMarketSnapshotBatch } from "./marketSnapshotProcessor";
 import type { MarketMetadata } from "./marketMetadata";
+import {
+	pickIsoTimestamp,
+	pickString,
+	toRecord,
+	uniqueArray,
+} from "./utils/records";
 
 export async function processPolymarketSnapshotBatch(
 	batch: MessageBatch<PolymarketSnapshotMessage>,
@@ -79,51 +85,6 @@ function extractPolymarketMarketMetadata(
 	}
 
 	return metadata;
-}
-
-function pickString(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed.length ? trimmed : undefined;
-	}
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return String(value);
-	}
-	return undefined;
-}
-
-
-
-function pickIsoTimestamp(value: unknown): string | undefined {
-	const raw = pickString(value);
-	if (!raw) {
-		return undefined;
-	}
-	const date = new Date(raw);
-	if (Number.isNaN(date.valueOf())) {
-		return undefined;
-	}
-	return date.toISOString();
-}
-
-function uniqueArray(values: Array<string | undefined>): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-	for (const value of values) {
-		const normalized = pickString(value);
-		if (!normalized || seen.has(normalized)) {
-			continue;
-		}
-		seen.add(normalized);
-		result.push(normalized);
-	}
-	return result;
-}
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-	if (typeof value === "object" && value !== null) {
-		return value as Record<string, unknown>;
-	}
-	return undefined;
 }
 
 function getRaw(raw: Record<string, unknown> | undefined, key: string): unknown {

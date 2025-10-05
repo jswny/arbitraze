@@ -3,10 +3,6 @@ import { normalizePrice, roundTo } from "./spreadUtils";
 
 const WS_PATH = "/trade-api/ws/v2";
 const REST_BASE_PATH = "/trade-api/v2";
-const DEMO_HTTP_BASE = "https://demo-api.kalshi.co";
-const PROD_HTTP_BASE = "https://api.elections.kalshi.com";
-const DEMO_WS_URL = "wss://demo-api.kalshi.co" + WS_PATH;
-const PROD_WS_URL = "wss://api.elections.kalshi.com" + WS_PATH;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const COMMAND_TIMEOUT_MS = 10_000;
@@ -17,6 +13,8 @@ const SUBSCRIBE_RESERVED_KEYS = new Set(["channels", "ok", "status", "ack"]);
 export interface KalshiBindings {
 	KALSHI_ACCESS_KEY_ID: string;
 	KALSHI_PRIVATE_KEY: string;
+	KALSHI_WS_BASE: string;
+	KALSHI_HTTP_BASE: string;
 	KALSHI_ENV?: string;
 }
 
@@ -457,13 +455,11 @@ export class KalshiClient {
 	}
 
 	private getEndpoint(): string {
-		const mode = this.env.KALSHI_ENV?.toLowerCase() ?? "production";
-		return mode === "demo" ? DEMO_WS_URL : PROD_WS_URL;
+		return `${this.env.KALSHI_WS_BASE}${WS_PATH}`;
 	}
 
 	private getHttpBase(): string {
-		const mode = this.env.KALSHI_ENV?.toLowerCase() ?? "production";
-		return mode === "demo" ? DEMO_HTTP_BASE : PROD_HTTP_BASE;
+		return this.env.KALSHI_HTTP_BASE;
 	}
 
 	private normalizeMarketRecord(record: Record<string, unknown>): LiveMarket | undefined {

@@ -1,6 +1,7 @@
 import type { KalshiSnapshotMessage } from "./kalshiIngest";
 import { processMarketSnapshotBatch } from "./marketSnapshotProcessor";
 import type { MarketMetadata } from "./marketMetadata";
+import { pickIsoTimestamp, pickString, uniqueArray } from "./utils/records";
 
 export async function processKalshiSnapshotBatch(
 	batch: MessageBatch<KalshiSnapshotMessage>,
@@ -74,43 +75,4 @@ function getRaw(raw: Record<string, unknown> | undefined, key: string): unknown 
 		return undefined;
 	}
 	return raw[key];
-}
-
-function pickString(value: unknown): string | undefined {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed.length ? trimmed : undefined;
-	}
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return String(value);
-	}
-	return undefined;
-}
-
-function pickIsoTimestamp(value: unknown): string | undefined {
-	const raw = pickString(value);
-	if (!raw) {
-		return undefined;
-	}
-
-	const date = new Date(raw);
-	if (Number.isNaN(date.valueOf())) {
-		return undefined;
-	}
-
-	return date.toISOString();
-}
-
-function uniqueArray(values: Array<string | undefined>): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-	for (const value of values) {
-		const normalized = pickString(value);
-		if (!normalized || seen.has(normalized)) {
-			continue;
-		}
-		seen.add(normalized);
-		result.push(normalized);
-	}
-	return result;
 }

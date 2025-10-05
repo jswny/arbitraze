@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { KalshiClient } from "./kalshiClient";
 import type { KalshiBindings } from "./kalshiClient";
+import { KALSHI_SNAPSHOTS_QUEUE_NAME, POLYMARKET_SNAPSHOTS_QUEUE_NAME } from "./constants";
 import { KalshiSnapshotQueueBindings, runKalshiIngest } from "./kalshiIngest";
 import type { KalshiSnapshotMessage } from "./kalshiIngest";
 import { processKalshiSnapshotBatch } from "./kalshiSnapshotConsumer";
@@ -16,14 +17,20 @@ type WorkerEnv = Env &
 	KalshiBindings &
 	KalshiSnapshotQueueBindings &
 	PolymarketIngestBindings &
-	PolymarketSnapshotQueueBindings;
+	PolymarketSnapshotQueueBindings &
+	EmbeddingModelBindings;
+
+interface EmbeddingModelBindings {
+	MARKET_EMBEDDING_MODEL: string;
+}
 
 declare global {
-	interface Env
-		extends KalshiBindings,
-			KalshiSnapshotQueueBindings,
-			PolymarketIngestBindings,
-			PolymarketSnapshotQueueBindings {}
+interface Env
+	extends KalshiBindings,
+		KalshiSnapshotQueueBindings,
+		PolymarketIngestBindings,
+		PolymarketSnapshotQueueBindings,
+		EmbeddingModelBindings {}
 }
 
 export class KalshiWebsocketDurableObject extends DurableObject<WorkerEnv> {
@@ -116,12 +123,12 @@ export class KalshiWebsocketDurableObject extends DurableObject<WorkerEnv> {
 		env: WorkerEnv,
 		ctx: ExecutionContext,
 	): Promise<void> {
-		if (batch.queue === "kalshi-snapshots") {
+		if (batch.queue === KALSHI_SNAPSHOTS_QUEUE_NAME) {
 			await processKalshiSnapshotBatch(batch as MessageBatch<KalshiSnapshotMessage>, env, ctx);
 			return;
 		}
 
-		if (batch.queue === "polymarket-snapshots") {
+		if (batch.queue === POLYMARKET_SNAPSHOTS_QUEUE_NAME) {
 			await processPolymarketSnapshotBatch(batch as MessageBatch<PolymarketSnapshotMessage>, env, ctx);
 			return;
 		}

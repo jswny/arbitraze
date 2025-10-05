@@ -1,4 +1,5 @@
 import { KalshiClient, KalshiBindings, KalshiMarketSnapshot } from "./kalshiClient";
+import { chunk } from "./utils/batch";
 
 export interface KalshiSnapshotQueueBindings {
 	KALSHI_SNAPSHOTS_QUEUE: Queue<KalshiSnapshotMessage>;
@@ -61,13 +62,4 @@ export async function runKalshiIngest(
 		console.error("[KalshiIngest] run failed", error);
 		throw error;
 	}
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-	if (size <= 0) return [items];
-	const chunks: T[][] = [];
-	for (let i = 0; i < items.length; i += size) {
-		chunks.push(items.slice(i, i + size));
-	}
-	return chunks;
 }
