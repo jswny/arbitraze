@@ -28,11 +28,20 @@
 			{
 				"binding": "KALSHI_SNAPSHOTS_QUEUE",
 				"queue": "kalshi-snapshots"
+			},
+			{
+				"binding": "POLYMARKET_SNAPSHOTS_QUEUE",
+				"queue": "polymarket-snapshots"
 			}
 		],
 		"consumers": [
 			{
 				"queue": "kalshi-snapshots",
+				"max_batch_size": 40,
+				"max_batch_timeout": 5
+			},
+			{
+				"queue": "polymarket-snapshots",
 				"max_batch_size": 40,
 				"max_batch_timeout": 5
 			}

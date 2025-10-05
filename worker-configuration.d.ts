@@ -11,6 +11,8 @@ declare namespace Cloudflare {
 		KALSHI_PRIVATE_KEY: string;
 		KALSHI_WEBSOCKET_DO: DurableObjectNamespace<import("./src/index").KalshiWebsocketDurableObject>;
 		KALSHI_SNAPSHOTS_QUEUE: Queue;
+		POLYMARKET_API_BASE?: string;
+		POLYMARKET_SNAPSHOTS_QUEUE: Queue;
 		MATCH_VECTORIZE: VectorizeIndex;
 		AI: Ai;
 	}
