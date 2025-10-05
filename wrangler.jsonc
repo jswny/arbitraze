@@ -49,7 +49,7 @@
 	},
 	"vectorize": [
 		{
-			"binding": "MATCH_VECTORIZE",
+			"binding": "MARKET_METADATA_VECTORS",
 			"index_name": "arbitraze-matching-markets-dev",
 			"remote": true
 		}
