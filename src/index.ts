@@ -1,3 +1,4 @@
+import type { D1Database } from "@cloudflare/workers-types";
 import { DurableObject } from "cloudflare:workers";
 import { KalshiClient } from "./kalshiClient";
 import type { KalshiBindings } from "./kalshiClient";
@@ -18,19 +19,25 @@ type WorkerEnv = Env &
 	KalshiSnapshotQueueBindings &
 	PolymarketIngestBindings &
 	PolymarketSnapshotQueueBindings &
-	EmbeddingModelBindings;
+	EmbeddingModelBindings &
+	MarketMetadataDatabaseBindings;
 
 interface EmbeddingModelBindings {
 	MARKET_EMBEDDING_MODEL: string;
 }
 
+interface MarketMetadataDatabaseBindings {
+	MARKET_METADATA_DB: D1Database;
+}
+
 declare global {
-interface Env
-	extends KalshiBindings,
-		KalshiSnapshotQueueBindings,
-		PolymarketIngestBindings,
-		PolymarketSnapshotQueueBindings,
-		EmbeddingModelBindings {}
+	interface Env
+		extends KalshiBindings,
+			KalshiSnapshotQueueBindings,
+			PolymarketIngestBindings,
+			PolymarketSnapshotQueueBindings,
+			EmbeddingModelBindings,
+			MarketMetadataDatabaseBindings {}
 }
 
 export class KalshiWebsocketDurableObject extends DurableObject<WorkerEnv> {
@@ -107,38 +114,37 @@ export class KalshiWebsocketDurableObject extends DurableObject<WorkerEnv> {
 	}
 
 }
-
 	export default {
 		async fetch(request: Request, env: WorkerEnv): Promise<Response> {
 			const id = env.KALSHI_WEBSOCKET_DO.idFromName("kalshi-websocket");
 			const stub = env.KALSHI_WEBSOCKET_DO.get(id);
 			return stub.fetch(request);
 		},
-	async scheduled(controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
-		ctx.waitUntil(runKalshiIngest(env, controller));
-		ctx.waitUntil(runPolymarketIngest(env, controller));
-	},
-	async queue(
-		batch: MessageBatch<KalshiSnapshotMessage | PolymarketSnapshotMessage>,
-		env: WorkerEnv,
-		ctx: ExecutionContext,
-	): Promise<void> {
-		if (batch.queue === KALSHI_SNAPSHOTS_QUEUE_NAME) {
-			await processKalshiSnapshotBatch(batch as MessageBatch<KalshiSnapshotMessage>, env, ctx);
-			return;
-		}
+		async scheduled(controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+			ctx.waitUntil(runKalshiIngest(env, controller));
+			ctx.waitUntil(runPolymarketIngest(env, controller));
+		},
+		async queue(
+			batch: MessageBatch<KalshiSnapshotMessage | PolymarketSnapshotMessage>,
+			env: WorkerEnv,
+			ctx: ExecutionContext,
+		): Promise<void> {
+			if (batch.queue === KALSHI_SNAPSHOTS_QUEUE_NAME) {
+				await processKalshiSnapshotBatch(batch as MessageBatch<KalshiSnapshotMessage>, env, ctx);
+				return;
+			}
 
-		if (batch.queue === POLYMARKET_SNAPSHOTS_QUEUE_NAME) {
-			await processPolymarketSnapshotBatch(batch as MessageBatch<PolymarketSnapshotMessage>, env, ctx);
-			return;
-		}
+			if (batch.queue === POLYMARKET_SNAPSHOTS_QUEUE_NAME) {
+				await processPolymarketSnapshotBatch(batch as MessageBatch<PolymarketSnapshotMessage>, env, ctx);
+				return;
+			}
 
-		console.warn(`[Queue] received batch for unexpected queue "${batch.queue}"; acking`);
-		for (const message of batch.messages) {
-			message.ack();
-		}
-	},
-} satisfies ExportedHandler<WorkerEnv, KalshiSnapshotMessage | PolymarketSnapshotMessage>;
+			console.warn(`[Queue] received batch for unexpected queue "${batch.queue}"; acking`);
+			for (const message of batch.messages) {
+				message.ack();
+			}
+		},
+	} satisfies ExportedHandler<WorkerEnv, KalshiSnapshotMessage | PolymarketSnapshotMessage>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;

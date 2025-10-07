@@ -3,6 +3,7 @@ import {
 	buildVectorMetadata,
 	type MarketMetadata,
 } from "./marketMetadata";
+import { upsertMarketMetadataBatch } from "./marketMetadataStore";
 
 const VECTOR_MATCH_THRESHOLD = 0.85;
 const VECTOR_MATCH_TOP_K = 3;
@@ -65,6 +66,13 @@ async function persistMarketMetadata(
 	if (records.length === 0) {
 		return;
 	}
+
+	const database = env.MARKET_METADATA_DB;
+	if (!database) {
+		throw new Error(`[${logPrefix}] missing MARKET_METADATA_DB binding; cannot persist markets`);
+	}
+
+	await upsertMarketMetadataBatch(database, records, logPrefix);
 
 	const vectorize = env.MARKET_METADATA_VECTORS;
 	if (!vectorize) {

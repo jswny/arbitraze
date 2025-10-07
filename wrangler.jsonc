@@ -9,91 +9,65 @@
 	"compatibility_date": "2025-10-03",
 	"migrations": [
 		{
-			"new_sqlite_classes": [
-				"KalshiWebsocketDurableObject"
-			],
-			"tag": "v1"
-		}
+			"new_sqlite_classes": ["KalshiWebsocketDurableObject"],
+			"tag": "v1",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
 			{
 				"class_name": "KalshiWebsocketDurableObject",
-				"name": "KALSHI_WEBSOCKET_DO"
-			}
-		]
+				"name": "KALSHI_WEBSOCKET_DO",
+			},
+		],
 	},
 	"queues": {
 		"producers": [
 			{
 				"binding": "KALSHI_SNAPSHOTS_QUEUE",
-				"queue": "kalshi-snapshots"
+				"queue": "kalshi-snapshots",
 			},
 			{
 				"binding": "POLYMARKET_SNAPSHOTS_QUEUE",
-				"queue": "polymarket-snapshots"
-			}
+				"queue": "polymarket-snapshots",
+			},
 		],
 		"consumers": [
 			{
 				"queue": "kalshi-snapshots",
 				"max_batch_size": 40,
-				"max_batch_timeout": 5
+				"max_batch_timeout": 5,
 			},
 			{
 				"queue": "polymarket-snapshots",
 				"max_batch_size": 40,
-				"max_batch_timeout": 5
-			}
-		]
+				"max_batch_timeout": 5,
+			},
+		],
 	},
 	"vectorize": [
 		{
 			"binding": "MARKET_METADATA_VECTORS",
 			"index_name": "arbitraze-matching-markets-dev",
-			"remote": true
-		}
+			"remote": true,
+		},
 	],
 	"ai": {
 		"binding": "AI",
-		"remote": true
+		"remote": true,
 	},
+	"d1_databases": [
+		{
+			"binding": "MARKET_METADATA_DB",
+			"database_name": "arbitraze-market-metadata",
+			"database_id": "arbitraze-market-metadata",
+			"migrations_dir": "migrations",
+		},
+	],
 	"triggers": {
-		"crons": [
-			"*/5 * * * *"
-		]
+		"crons": ["*/5 * * * *"],
 	},
 	"observability": {
-		"enabled": true
-	}
-	/**
-	 * Smart Placement
-	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": { "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 */
-	// "vars": { "MY_VARIABLE": "production_value" }
-	/**
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": { "directory": "./public/", "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
+		"enabled": true,
+	},
 }
