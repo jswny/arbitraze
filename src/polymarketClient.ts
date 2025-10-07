@@ -5,11 +5,11 @@ import {
 	pickString,
 	toRecord,
 } from "./utils/records";
+import { RateLimiter } from "./utils/rateLimiter";
 
 const DEFAULT_API_BASE = "https://gamma-api.polymarket.com";
 const MARKETS_PATH = "/markets";
 const DEFAULT_LIMIT = 200;
-const DEFAULT_MAX_PAGES = 5;
 
 export interface PolymarketClientOptions {
 	readonly apiBaseUrl?: string;
@@ -65,6 +65,7 @@ export interface PolymarketMarket {
 
 export class PolymarketClient {
 	private readonly apiBase: string;
+	private readonly rateLimiter = new RateLimiter({ maxCalls: 90, windowMs: 10_000 });
 
 	constructor(options: PolymarketClientOptions = {}) {
 		this.apiBase = options.apiBaseUrl ?? DEFAULT_API_BASE;
@@ -73,18 +74,31 @@ export class PolymarketClient {
 	async fetchMarketSnapshots(
 		options: FetchPolymarketMarketsOptions = {},
 	): Promise<PolymarketMarketSnapshot[]> {
+		const snapshots: PolymarketMarketSnapshot[] = [];
+		for await (const page of this.iterateMarketSnapshots(options)) {
+			snapshots.push(...page);
+		}
+		return snapshots;
+	}
+
+	async *iterateMarketSnapshots(
+		options: FetchPolymarketMarketsOptions = {},
+): AsyncGenerator<PolymarketMarketSnapshot[], void, void> {
 		const {
 			limit = DEFAULT_LIMIT,
-			maxPages = DEFAULT_MAX_PAGES,
+			maxPages,
 			activeOnly = true,
 			includeClosed = false,
 			minVolume24h,
 		} = options;
 
-		const snapshots: PolymarketMarketSnapshot[] = [];
 		const seen = new Set<string>();
 
-		for (let page = 0; page < maxPages; page += 1) {
+		for (let page = 0;; page += 1) {
+			if (maxPages !== undefined && page >= maxPages) {
+				break;
+			}
+
 			const offset = page * limit;
 			const params = new URLSearchParams();
 			params.set("limit", String(limit));
@@ -101,11 +115,13 @@ export class PolymarketClient {
 			}
 
 			const url = `${this.apiBase}${MARKETS_PATH}?${params.toString()}`;
-			const response = await fetch(url, {
-				headers: {
-					accept: "application/json",
-				},
-			});
+			const response = await this.rateLimiter.schedule(() =>
+				fetch(url, {
+					headers: {
+						accept: "application/json",
+					},
+				}),
+			);
 			if (!response.ok) {
 				const body = await response.text();
 				throw new Error(
@@ -119,6 +135,7 @@ export class PolymarketClient {
 				break;
 			}
 
+			const pageSnapshots: PolymarketMarketSnapshot[] = [];
 			for (const item of markets) {
 				const rawRecord = toRecord(item);
 				if (!rawRecord) {
@@ -140,15 +157,17 @@ export class PolymarketClient {
 					continue;
 				}
 				seen.add(normalized.id);
-				snapshots.push({ market: normalized, raw: rawRecord });
+				pageSnapshots.push({ market: normalized, raw: rawRecord });
+			}
+
+			if (pageSnapshots.length > 0) {
+				yield pageSnapshots;
 			}
 
 			if (markets.length < limit) {
 				break;
 			}
 		}
-
-		return snapshots;
 	}
 }
 

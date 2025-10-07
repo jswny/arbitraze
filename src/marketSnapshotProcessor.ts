@@ -4,6 +4,9 @@ import {
 	type MarketMetadata,
 } from "./marketMetadata";
 
+const VECTOR_MATCH_THRESHOLD = 0.85;
+const VECTOR_MATCH_TOP_K = 3;
+
 interface ProcessMarketSnapshotOptions<T> {
 	logPrefix: string;
 	extractMetadata: (message: Message<T>) => MarketMetadata | undefined;
@@ -90,6 +93,7 @@ async function persistMarketMetadata(
 	});
 
 	const vectors: VectorizeVector[] = [];
+	const recordById = new Map<string, MarketMetadata>();
 	for (const [index, item] of documents.entries()) {
 		const values = extractEmbeddingVector(response, index);
 		if (!values) {
@@ -102,6 +106,7 @@ async function persistMarketMetadata(
 			values,
 			metadata: buildVectorMetadata(item.record),
 		});
+		recordById.set(item.record.id, item.record);
 	}
 
 	if (vectors.length === 0) {
@@ -113,6 +118,8 @@ async function persistMarketMetadata(
 	console.log(
 		`[${logPrefix}] upserted ${vectors.length} vector(s) using model ${resolvedModel} into Vectorize`,
 	);
+
+	await logPotentialMatches(vectorize, vectors, recordById, logPrefix);
 }
 
 type AiModelName = Parameters<Ai["run"]>[0];
@@ -142,4 +149,55 @@ function extractEmbeddingVector(response: unknown, index: number): Float32Array 
 	}
 
 	return undefined;
+}
+
+async function logPotentialMatches(
+	vectorize: VectorizeIndex,
+	vectors: VectorizeVector[],
+	recordById: Map<string, MarketMetadata>,
+	logPrefix: string,
+): Promise<void> {
+	for (const vector of vectors) {
+		const source = recordById.get(vector.id);
+		if (!source) {
+			continue;
+		}
+
+		try {
+			const matches = await vectorize.query(vector.values, {
+				topK: VECTOR_MATCH_TOP_K,
+				returnMetadata: "indexed",
+				filter: {
+					venue: { $ne: source.venue },
+				},
+			});
+			const best = matches.matches?.[0];
+			if (!best || typeof best.score !== "number" || best.score < VECTOR_MATCH_THRESHOLD) {
+				continue;
+			}
+
+			if (!best.id || best.id === vector.id) {
+				continue;
+			}
+
+			const matchVenueValue = best.metadata?.venue;
+			const matchVenue = typeof matchVenueValue === "string" ? matchVenueValue : undefined;
+			if (!matchVenue || matchVenue === source.venue) {
+				continue;
+			}
+
+			console.log(`[${logPrefix}] potential cross-venue match`, {
+				sourceVenue: source.venue,
+				sourceId: vector.id,
+				matchVenue,
+				matchId: best.id,
+				score: best.score,
+			});
+		} catch (error) {
+			console.error(`[${logPrefix}] vector match query failed`, {
+				id: vector.id,
+				error,
+			});
+		}
+	}
 }

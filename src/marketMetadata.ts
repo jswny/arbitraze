@@ -20,7 +20,6 @@ export interface MarketEventMetadata {
 export function buildEmbeddingDocument(record: MarketMetadata): string | undefined {
 	const sections: string[] = [];
 
-	sections.push(`Venue: ${record.venue}`);
 	sections.push(`Market ID: ${record.id}`);
 
 	appendIfPresent(sections, "Symbol", record.symbol);

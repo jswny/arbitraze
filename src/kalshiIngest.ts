@@ -30,33 +30,34 @@ export async function runKalshiIngest(
 
 	try {
 		const client = new KalshiClient(env);
-		const snapshots = await client.fetchLiveMarketSnapshots();
-		console.log(`[KalshiIngest] fetched ${snapshots.length} live markets`);
-
-		if (snapshots.length === 0) {
-			return;
-		}
-
+		let total = 0;
+		let batchesDispatched = 0;
 		const capturedAt = new Date().toISOString();
-		const batches = chunk(snapshots, QUEUE_BATCH_SIZE);
-		let batchIndex = 0;
 
-		for (const batch of batches) {
-			batchIndex += 1;
-			const messages = batch.map((snapshot) => ({
-				body: {
-					venue: "kalshi" as const,
-					captured_at: capturedAt,
-					ingest_id: ingestId,
-					market: snapshot.market,
-					raw: snapshot.raw,
-				},
-			}));
-			await env.KALSHI_SNAPSHOTS_QUEUE.sendBatch(messages);
+		for await (const pageSnapshots of client.iterateLiveMarketSnapshots()) {
+			if (pageSnapshots.length === 0) {
+				continue;
+			}
+
+			total += pageSnapshots.length;
+			const batches = chunk(pageSnapshots, QUEUE_BATCH_SIZE);
+			for (const batch of batches) {
+				const messages = batch.map((snapshot) => ({
+					body: {
+						venue: "kalshi" as const,
+						captured_at: capturedAt,
+						ingest_id: ingestId,
+						market: snapshot.market,
+						raw: snapshot.raw,
+					},
+				}));
+				await env.KALSHI_SNAPSHOTS_QUEUE.sendBatch(messages);
+				batchesDispatched += 1;
+			}
 		}
 
 		console.log(
-			`[KalshiIngest] completed ingest_id=${ingestId} batches=${batches.length} total=${snapshots.length}`,
+			`[KalshiIngest] completed ingest_id=${ingestId} batches=${batchesDispatched} total=${total}`,
 		);
 	} catch (error) {
 		console.error("[KalshiIngest] run failed", error);

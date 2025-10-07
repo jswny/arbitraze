@@ -47,34 +47,38 @@ export async function runPolymarketIngest(
 	);
 
 	try {
-		const snapshots = await fetchPolymarketMarketSnapshots(options, {
+		const client = new PolymarketClient({
 			apiBaseUrl: env.POLYMARKET_API_BASE,
 		});
-		console.log(`[PolymarketIngest] fetched ${snapshots.length} market(s)`);
-
-		if (snapshots.length === 0) {
-			return;
-		}
-
 		const queue = env.POLYMARKET_SNAPSHOTS_QUEUE;
-
 		const capturedAt = new Date().toISOString();
-		const batches = chunk(snapshots, QUEUE_BATCH_SIZE);
-		for (const batch of batches) {
-			const messages = batch.map((snapshot) => ({
-				body: {
-					venue: "polymarket" as const,
-					captured_at: capturedAt,
-					ingest_id: ingestId,
-					market: snapshot.market,
-					raw: snapshot.raw,
-				},
-			}));
-			await queue.sendBatch(messages);
+		let total = 0;
+		let batchesDispatched = 0;
+
+		for await (const pageSnapshots of client.iterateMarketSnapshots(options)) {
+			if (pageSnapshots.length === 0) {
+				continue;
+			}
+
+			total += pageSnapshots.length;
+			const batches = chunk(pageSnapshots, QUEUE_BATCH_SIZE);
+			for (const batch of batches) {
+				const messages = batch.map((snapshot) => ({
+					body: {
+						venue: "polymarket" as const,
+						captured_at: capturedAt,
+						ingest_id: ingestId,
+						market: snapshot.market,
+						raw: snapshot.raw,
+					},
+				}));
+				await queue.sendBatch(messages);
+				batchesDispatched += 1;
+			}
 		}
 
 		console.log(
-			`[PolymarketIngest] completed ingest_id=${ingestId} batches=${batches.length} total=${snapshots.length}`,
+			`[PolymarketIngest] completed ingest_id=${ingestId} batches=${batchesDispatched} total=${total}`,
 		);
 	} catch (error) {
 		console.error("[PolymarketIngest] run failed", error);

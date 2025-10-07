@@ -1,4 +1,5 @@
 import { importPkcs8PrivateKey, signRsaPssBase64 } from "./crypto";
+import { RateLimiter } from "./utils/rateLimiter";
 import { normalizePrice, roundTo } from "./spreadUtils";
 
 const WS_PATH = "/trade-api/ws/v2";
@@ -111,6 +112,7 @@ export class KalshiClient {
 	private reconnectTimer?: ReturnType<typeof setTimeout>;
 	private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
 	private signingKeyPromise?: Promise<CryptoKey>;
+	private readonly httpRateLimiter = new RateLimiter({ maxCalls: 18, windowMs: 10_000 });
 	private lastError?: string;
 	private lastConnectAttempt = 0;
 	private nextMessageId = 1;
@@ -179,20 +181,36 @@ export class KalshiClient {
 
 	async fetchLiveMarketSnapshots(
 		limit = 200,
-		maxPages = 3,
-	): Promise<KalshiMarketSnapshot[]> {
+		maxPages?: number,
+): Promise<KalshiMarketSnapshot[]> {
 		const snapshots: KalshiMarketSnapshot[] = [];
+		for await (const page of this.iterateLiveMarketSnapshots(limit, maxPages)) {
+			snapshots.push(...page);
+		}
+		return snapshots;
+	}
+
+	async *iterateLiveMarketSnapshots(
+		limit = 200,
+		maxPages?: number,
+): AsyncGenerator<KalshiMarketSnapshot[], void, void> {
 		const seen = new Set<string>();
-		for (let page = 0; page < maxPages; page += 1) {
-			const search = new URLSearchParams({
-				limit: String(limit),
-				offset: String(page * limit),
-			});
+		let cursor: string | undefined;
+		for (let pageIndex = 0;; pageIndex += 1) {
+			if (maxPages !== undefined && pageIndex >= maxPages) {
+				break;
+			}
+
+			const search = new URLSearchParams({ limit: String(limit) });
+			if (cursor) {
+				search.set("cursor", cursor);
+			}
+
 			const path = `${REST_BASE_PATH}/markets?${search.toString()}`;
 			const url = `${this.getHttpBase()}${path}`;
 			const headers = await this.buildAuthHeaders("GET", path);
 
-			const response = await fetch(url, { headers });
+			const response = await this.httpRateLimiter.schedule(() => fetch(url, { headers }));
 			if (!response.ok) {
 				const text = await response.text();
 				throw new Error(
@@ -202,9 +220,8 @@ export class KalshiClient {
 
 			const data = (await response.json()) as Record<string, unknown> | undefined;
 			const marketsRaw = Array.isArray(data?.markets) ? (data!.markets as unknown[]) : [];
-			if (!marketsRaw.length) {
-				break;
-			}
+
+			const pageSnapshots: KalshiMarketSnapshot[] = [];
 			for (const market of marketsRaw) {
 				if (!market) continue;
 				const record = market as Record<string, unknown>;
@@ -215,15 +232,23 @@ export class KalshiClient {
 				if (!normalized) continue;
 				if (seen.has(normalized.ticker)) continue;
 				seen.add(normalized.ticker);
-				snapshots.push({ market: normalized, raw: record });
+				pageSnapshots.push({ market: normalized, raw: record });
 			}
 
-			if (marketsRaw.length < limit) {
+			const nextCursorRaw = (data as { cursor?: unknown; next_cursor?: unknown } | undefined)?.cursor ??
+				(data as { cursor?: unknown; next_cursor?: unknown } | undefined)?.next_cursor;
+			const nextCursor = typeof nextCursorRaw === "string" && nextCursorRaw.length > 0 ? nextCursorRaw : undefined;
+
+			if (pageSnapshots.length > 0) {
+				yield pageSnapshots;
+			}
+
+			if (!nextCursor || pageSnapshots.length === 0) {
 				break;
 			}
-		}
 
-		return snapshots;
+			cursor = nextCursor;
+		}
 	}
 
 	async fetchLiveTickers(
